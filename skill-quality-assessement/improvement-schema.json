@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shiftbase.com/schemas/skill-improvement.json",
+  "$comment": "skill-quality-assessment v0.1.0",
+  "title": "Skill Improvement Output",
+  "description": "Auditable trail of changes made to a skill in response to feedback. Filename: IMPROVEMENT_YYYYMMDD.json (date when changes completed). Supports skill renames, moves, and splits.",
+  "type": "object",
+  "required": ["source", "target", "agent", "changes"],
+  "properties": {
+    "source": {
+      "type": "object",
+      "required": ["skill", "feedback", "version"],
+      "properties": {
+        "skill": {
+          "type": "object",
+          "required": ["name", "path"],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Skill name before improvements",
+              "examples": ["constraint-programming", "legal-document-translation"]
+            },
+            "path": {
+              "type": "string",
+              "description": "Skill directory path before improvements (relative to workspace root)",
+              "examples": [".ai/skills/constraint-programming", ".claude/skills/skill-quality-assessment"]
+            }
+          }
+        },
+        "feedback": {
+          "type": "string",
+          "description": "Filename of feedback document that triggered improvements",
+          "pattern": "^FEEDBACK_\\d{8}\\.json$",
+          "examples": ["FEEDBACK_20260113.json"]
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Skill version before improvements",
+          "examples": ["1.0.0", "0.1.0"]
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["skill", "version"],
+      "properties": {
+        "skill": {
+          "type": "object",
+          "required": ["name", "path"],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Skill name after improvements (may differ if renamed)",
+              "examples": ["constraint-programming", "constraint-solver"]
+            },
+            "path": {
+              "type": "string",
+              "description": "Skill directory path after improvements (may differ if moved)",
+              "examples": [".ai/skills/constraint-programming", ".ai/skills/constraint-solver"]
+            }
+          }
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Skill version after improvements",
+          "examples": ["1.1.0", "0.2.0"]
+        }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "required": ["runtime", "models"],
+      "properties": {
+        "runtime": {
+          "type": "string",
+          "description": "Environment where agent processed feedback",
+          "examples": ["VSCode", "CLI", "API"]
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "description": "LLM model(s) used during improvement processing",
+          "examples": [["claude-sonnet-4.5"], ["gpt-4", "claude-sonnet-4"]]
+        }
+      }
+    },
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "description": "List of changes made, grouped by atomic action taken",
+      "items": {
+        "type": "object",
+        "required": ["feedback_id", "files", "action", "description"],
+        "properties": {
+          "feedback_id": {
+            "type": "string",
+            "pattern": "^f\\d+$",
+            "description": "ID from feedback item that this change addresses",
+            "examples": ["f1", "f2", "f12"]
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "description": "File(s) modified by this atomic action (paths relative to skill source)",
+            "examples": [
+              ["references/CORE_CLASSES.md"],
+              ["SKILL.md", "references/TESTING.md"]
+            ]
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "added",
+              "removed",
+              "fixed",
+              "replaced",
+              "clarified",
+              "condensed",
+              "expanded",
+              "restructured",
+              "reworded",
+              "moved",
+              "merged",
+              "split"
+            ],
+            "description": "Past-tense action describing what was done"
+          },
+          "description": {
+            "type": "string",
+            "description": "What was changed (focus on WHAT, not WHY - reference feedback for rationale)",
+            "examples": [
+              "Added DateTime API documentation with Timestamp, Duration, Date, Window classes including creation methods and comparison operators",
+              "Moved constraint validation logic from SKILL.md to new VALIDATION_GUIDE.md reference doc"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

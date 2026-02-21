@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shiftbase.com/schemas/skill-quality-assessment.json",
+  "$comment": "skill-quality-assessment v0.1.0",
+  "title": "Skill Quality Assessment",
+  "description": "Structured feedback on skill effectiveness during task execution",
+  "type": "object",
+  "required": ["skill", "task", "autonomy", "feedback", "agent"],
+  "properties": {
+    "skill": {
+      "type": "object",
+      "description": "Information about the skill being assessed",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the skill being assessed (e.g., 'constraint-programming')"
+        },
+        "date": {
+          "type": "string",
+          "format": "^\\d{4}-\\d{2}-\\d{2}$",
+          "description": "Date the feedback was recorded (e.g., '2026-01-12')"
+        },
+        "version": {
+          "type": "string",
+          "description": "Version of the skill being assessed, if present in skill metadata (e.g., '1.0.0')",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$"
+        }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "description": "Information about the agent that performed the task",
+      "required": ["runtime", "models"],
+      "properties": {
+        "runtime": {
+          "type": "string",
+          "description": "Runtime environment where agent executed (e.g., 'VSCode', 'Cursor IDE', 'CLI', 'GitHub Copilot Chat', 'Continue.dev')"
+        },
+        "models": {
+          "type": "array",
+          "description": "LLM model(s) used to complete task, in order of primary to supporting models",
+          "items": {
+            "type": "string",
+            "description": "Model identifier (e.g., 'claude-sonnet-4.5', 'gpt-4o', 'gpt-4o-mini')"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "description": "Information about the task that was completed using the skill",
+      "required": ["description", "completion", "complexity"],
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "Brief description of task performed (e.g., 'Implement EnforceMaximumWeeklyHours constraint')"
+        },
+        "completion": {
+          "type": "string",
+          "enum": ["complete", "incomplete", "abandoned"],
+          "description": "Whether the task was fully completed"
+        },
+        "complexity": {
+          "type": "string",
+          "enum": ["simple", "moderate", "complex"],
+          "description": "Complexity level of the task"
+        }
+      }
+    },
+    "autonomy": {
+      "type": "object",
+      "description": "Assessment of how independently the agent completed the task",
+      "required": ["level", "total_interventions"],
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": ["fully", "mostly", "semi", "low", "failed"],
+          "description": "Autonomy level: fully=0 interventions, mostly=1-2, semi=3-5, low=6+, failed=unable to proceed"
+        },
+        "total_interventions": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of human interventions required to complete task"
+        }
+      }
+    },
+    "preserve": {
+      "type": "array",
+      "description": "Content that worked exceptionally well and should not be changed",
+      "items": {
+        "type": "object",
+        "required": ["item", "why"],
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "What to preserve (e.g., 'Quick start template in SKILL.md')"
+          },
+          "why": {
+            "type": "string",
+            "description": "Why this was effective (e.g., 'Used as-is, saved setup time')"
+          }
+        }
+      }
+    },
+    "feedback": {
+      "type": "array",
+      "description": "Issues and improvement opportunities identified",
+      "items": {
+        "type": "object",
+        "required": ["id", "area", "severity", "action", "summary", "description", "rationale", "suggestions"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for this feedback item (e.g., 'f1', 'f2')",
+            "pattern": "^f\\d+$"
+          },
+          "area": {
+            "type": "string",
+            "enum": [
+              "accuracy",
+              "missing_context",
+              "non_existent",
+              "broken_example",
+              "navigation",
+              "verbosity",
+              "examples",
+              "guidance",
+              "structure"
+            ],
+            "description": "Category of the feedback: accuracy=wrong info, missing_context=gaps in knowledge, non_existent=references to things that don't exist, broken_example=code that doesn't work, navigation=hard to find info, verbosity=too wordy, examples=example issues, guidance=workflow gaps, structure=organization problems"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low"],
+            "description": "Severity: critical=broken code/blocks progress, high=missing essential context, medium=inefficient/confusing, low=nice-to-have"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "fix",
+              "replace",
+              "remove",
+              "add",
+              "clarify",
+              "condense",
+              "expand",
+              "restructure",
+              "reword",
+              "move",
+              "merge",
+              "split"
+            ],
+            "description": "Type of action needed: fix=correct error, replace=substitute content, remove=delete, add=insert new, clarify=make clearer, condense=reduce verbosity, expand=add detail, restructure=reorganize, reword=rephrase, move=relocate, merge=combine, split=separate"
+          },
+          "file": {
+            "type": "string",
+            "description": "File where issue exists (e.g., 'references/CORE_CLASSES.md')"
+          },
+          "summary": {
+            "type": "string",
+            "description": "One-sentence summary of the issue (e.g., 'Duration uses wrong method name')"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed description with full context (e.g., 'Skill references greaterThan() but Duration class only has moreThan()')"
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Why this matters and what impact it has (e.g., 'Code breaks immediately when used, test fails')"
+          },
+          "suggestions": {
+            "type": "array",
+            "description": "One or more suggestions for how to address the issue",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "required_intervention": {
+            "type": "boolean",
+            "description": "Whether this issue required human intervention to resolve",
+            "default": false
+          }
+        }
+      }
+    }
+  }
+}
