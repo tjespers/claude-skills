@@ -53,8 +53,11 @@ skill-name/
 ├── SKILL.md (required)
 │   ├── YAML frontmatter metadata (required)
 │   │   ├── name: (required)
-│   │   └── description: (required)
+│   │   ├── description: (required)
+│   │   ├── license: (default)
+│   │   └── metadata: (default)
 │   └── Markdown instructions (required)
+├── LICENSE (default - included unless user opts out)
 └── Bundled Resources (optional)
     ├── scripts/          - Executable code (Python/Bash/etc.)
     ├── references/       - Documentation intended to be loaded into context as needed
@@ -65,7 +68,7 @@ skill-name/
 
 Every SKILL.md consists of:
 
-- **Frontmatter** (YAML): Contains `name` and `description` fields. These are the only fields that Claude reads to determine when the skill gets used, thus it is very important to be clear and comprehensive in describing what the skill is, and when it should be used.
+- **Frontmatter** (YAML): Contains `name` and `description` fields (used by Claude to determine when the skill activates), plus `license` and `metadata` fields (included by default). It is very important to be clear and comprehensive in the description about what the skill is and when it should be used.
 - **Body** (Markdown): Instructions and guidance for using the skill. Only loaded AFTER the skill triggers (if at all).
 
 #### Bundled Resources (optional)
@@ -270,7 +273,8 @@ scripts/init_skill.py <skill-name> --path <output-directory>
 The script:
 
 - Creates the skill directory at the specified path
-- Generates a SKILL.md template with proper frontmatter and TODO placeholders
+- Generates a SKILL.md template with proper frontmatter (including `license` and `metadata`) and TODO placeholders
+- Creates a LICENSE file (copies from the project root if one exists, otherwise creates a default Apache-2.0 license)
 - Creates example resource directories: `scripts/`, `references/`, and `assets/`
 - Adds example files in each directory that can be customized or deleted
 
@@ -303,15 +307,20 @@ Any example files and directories not needed for the skill should be deleted. Th
 
 ##### Frontmatter
 
-Write the YAML frontmatter with `name` and `description`:
+Write the YAML frontmatter with these fields:
 
 - `name`: The skill name
 - `description`: This is the primary triggering mechanism for your skill, and helps Claude understand when to use the skill.
   - Include both what the Skill does and specific triggers/contexts for when to use it.
   - Include all "when to use" information here - Not in the body. The body is only loaded after triggering, so "When to Use This Skill" sections in the body are not helpful to Claude.
   - Example description for a `docx` skill: "Comprehensive document creation, editing, and analysis with support for tracked changes, comments, formatting preservation, and text extraction. Use when Claude needs to work with professional documents (.docx files) for: (1) Creating new documents, (2) Modifying or editing content, (3) Working with tracked changes, (4) Adding comments, or any other document tasks"
-
-Do not include any other fields in YAML frontmatter.
+- `license`: The license identifier (e.g., `Apache-2.0`, `MIT`). Included by default — determine the license by:
+  1. Check if the project already has a LICENSE file → use that license identifier
+  2. If no project license exists → default to `Apache-2.0`
+  - Only omit if the user explicitly opts out of licensing
+- `metadata`: Additional metadata about the skill. Include by default:
+  - `author`: The skill author's name and email (derive from git config if available)
+  - `version`: Semantic version starting at `1.0.0`
 
 ##### Body
 

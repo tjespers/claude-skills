@@ -3,21 +3,29 @@
 Skill Initializer - Creates a new skill from template
 
 Usage:
-    init_skill.py <skill-name> --path <path>
+    init_skill.py <skill-name> --path <path> [--no-license]
 
 Examples:
     init_skill.py my-new-skill --path skills/public
     init_skill.py my-api-helper --path skills/private
-    init_skill.py custom-skill --path /custom/location
+    init_skill.py custom-skill --path /custom/location --no-license
 """
 
 import sys
+import subprocess
+import shutil
+import json
+import urllib.request
+import urllib.error
 from pathlib import Path
 
 
 SKILL_TEMPLATE = """---
 name: {skill_name}
 description: [TODO: Complete and informative explanation of what the skill does and when to use it. Include WHEN to use this skill - specific scenarios, file types, or tasks that trigger it.]
+{license_block}metadata:
+  author: {author}
+  version: 1.0.0
 ---
 
 # {skill_title}
@@ -185,19 +193,119 @@ Example asset files from other skills:
 Note: This is a text placeholder. Actual assets can be any file type.
 """
 
+# Map of common license file content patterns to SPDX identifiers
+LICENSE_PATTERNS = {
+    'Apache License': 'Apache-2.0',
+    'MIT License': 'MIT',
+    'GNU GENERAL PUBLIC LICENSE': 'GPL-3.0',
+    'GNU LESSER GENERAL PUBLIC LICENSE': 'LGPL-3.0',
+    'BSD 2-Clause': 'BSD-2-Clause',
+    'BSD 3-Clause': 'BSD-3-Clause',
+    'Mozilla Public License': 'MPL-2.0',
+    'ISC License': 'ISC',
+    'The Unlicense': 'Unlicense',
+}
+
+GITHUB_LICENSES_API = 'https://api.github.com/licenses/'
+DEFAULT_LICENSE_ID = 'Apache-2.0'
+
+
+def get_git_author():
+    """Get author name and email from git config."""
+    try:
+        name = subprocess.run(
+            ['git', 'config', 'user.name'],
+            capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        email = subprocess.run(
+            ['git', 'config', 'user.email'],
+            capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        if name and email:
+            return f"{name} <{email}>"
+        elif name:
+            return name
+    except Exception:
+        pass
+    return '[TODO: Author name <email>]'
+
+
+def find_project_license(start_path):
+    """
+    Search for a LICENSE file in the project, walking up to the git root.
+    Returns (license_id, license_file_path) or (DEFAULT_LICENSE_ID, None).
+    """
+    # Find git root
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--show-toplevel'],
+            capture_output=True, text=True, timeout=5,
+            cwd=str(start_path)
+        )
+        if result.returncode == 0:
+            root = Path(result.stdout.strip())
+        else:
+            root = start_path
+    except Exception:
+        root = start_path
+
+    # Search for license files from start_path up to root
+    current = Path(start_path).resolve()
+    root = root.resolve()
+
+    while True:
+        for name in ['LICENSE', 'LICENSE.txt', 'LICENSE.md', 'LICENCE', 'LICENCE.txt']:
+            license_file = current / name
+            if license_file.is_file():
+                content = license_file.read_text(errors='replace')[:2000]
+                license_id = detect_license_id(content)
+                return license_id, license_file
+        if current == root or current == current.parent:
+            break
+        current = current.parent
+
+    return DEFAULT_LICENSE_ID, None
+
+
+def detect_license_id(content):
+    """Detect SPDX license identifier from file content."""
+    for pattern, spdx_id in LICENSE_PATTERNS.items():
+        if pattern.lower() in content.lower():
+            return spdx_id
+    return DEFAULT_LICENSE_ID
+
+
+def download_license(spdx_id):
+    """
+    Download license text from GitHub's Licenses API.
+    Returns license body text, or None on failure.
+    """
+    url = f"{GITHUB_LICENSES_API}{spdx_id}"
+    try:
+        req = urllib.request.Request(url, headers={
+            'Accept': 'application/vnd.github+json',
+            'User-Agent': 'skill-creator-init',
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            return data.get('body')
+    except (urllib.error.URLError, json.JSONDecodeError, KeyError, OSError):
+        return None
+
 
 def title_case_skill_name(skill_name):
     """Convert hyphenated skill name to Title Case for display."""
     return ' '.join(word.capitalize() for word in skill_name.split('-'))
 
 
-def init_skill(skill_name, path):
+def init_skill(skill_name, path, no_license=False):
     """
     Initialize a new skill directory with template SKILL.md.
 
     Args:
         skill_name: Name of the skill
         path: Path where the skill directory should be created
+        no_license: If True, skip license file and frontmatter field
 
     Returns:
         Path to created skill directory, or None if error
@@ -218,11 +326,23 @@ def init_skill(skill_name, path):
         print(f"❌ Error creating directory: {e}")
         return None
 
+    # Detect license and author
+    license_id = None
+    project_license_file = None
+    if not no_license:
+        license_id, project_license_file = find_project_license(Path(path).resolve())
+    author = get_git_author()
+
+    # Build license frontmatter block
+    license_block = f"license: {license_id}\n" if license_id else ""
+
     # Create SKILL.md from template
     skill_title = title_case_skill_name(skill_name)
     skill_content = SKILL_TEMPLATE.format(
         skill_name=skill_name,
-        skill_title=skill_title
+        skill_title=skill_title,
+        license_block=license_block,
+        author=author,
     )
 
     skill_md_path = skill_dir / 'SKILL.md'
@@ -232,6 +352,26 @@ def init_skill(skill_name, path):
     except Exception as e:
         print(f"❌ Error creating SKILL.md: {e}")
         return None
+
+    # Create LICENSE file
+    if not no_license:
+        license_path = skill_dir / 'LICENSE'
+        try:
+            if project_license_file:
+                # Copy existing project license
+                shutil.copy2(project_license_file, license_path)
+                print(f"✅ Created LICENSE (copied from {project_license_file.name}, {license_id})")
+            else:
+                # Download from GitHub's Licenses API
+                print(f"   Downloading {license_id} license from GitHub...")
+                license_body = download_license(license_id)
+                if license_body:
+                    license_path.write_text(license_body)
+                    print(f"✅ Created LICENSE ({license_id}, downloaded from GitHub)")
+                else:
+                    print(f"⚠️  Could not download license from GitHub. Create LICENSE manually.")
+        except Exception as e:
+            print(f"⚠️  Warning: Could not create LICENSE file: {e}")
 
     # Create resource directories with example files
     try:
@@ -271,27 +411,35 @@ def init_skill(skill_name, path):
 
 
 def main():
-    if len(sys.argv) < 4 or sys.argv[2] != '--path':
-        print("Usage: init_skill.py <skill-name> --path <path>")
+    # Parse arguments
+    args = sys.argv[1:]
+    no_license = '--no-license' in args
+    if no_license:
+        args.remove('--no-license')
+
+    if len(args) < 3 or args[1] != '--path':
+        print("Usage: init_skill.py <skill-name> --path <path> [--no-license]")
         print("\nSkill name requirements:")
         print("  - Hyphen-case identifier (e.g., 'data-analyzer')")
         print("  - Lowercase letters, digits, and hyphens only")
         print("  - Max 40 characters")
         print("  - Must match directory name exactly")
+        print("\nOptions:")
+        print("  --no-license    Skip LICENSE file and license frontmatter field")
         print("\nExamples:")
         print("  init_skill.py my-new-skill --path skills/public")
         print("  init_skill.py my-api-helper --path skills/private")
-        print("  init_skill.py custom-skill --path /custom/location")
+        print("  init_skill.py custom-skill --path /custom/location --no-license")
         sys.exit(1)
 
-    skill_name = sys.argv[1]
-    path = sys.argv[3]
+    skill_name = args[0]
+    path = args[2]
 
     print(f"🚀 Initializing skill: {skill_name}")
     print(f"   Location: {path}")
     print()
 
-    result = init_skill(skill_name, path)
+    result = init_skill(skill_name, path, no_license=no_license)
 
     if result:
         sys.exit(0)
