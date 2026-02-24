@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -16,7 +17,7 @@ STATUS_DISPLAY = {
     "done": ("\u2705", "Done"),
 }
 
-REQUIRED_FIELDS = ("title", "status", "who", "why", "goals", "non_goals")
+REQUIRED_ITEM_FIELDS = ("id", "title", "status", "who", "why", "goals", "non_goals")
 
 
 def load_roadmap(path: Path) -> dict:
@@ -31,11 +32,41 @@ def load_roadmap(path: Path) -> dict:
         print('Error: roadmap.json must be an object with an "items" array', file=sys.stderr)
         sys.exit(1)
 
+    if "key" not in data or not isinstance(data["key"], str) or not data["key"].strip():
+        print(
+            'Error: roadmap.json must have a top-level "key" field (e.g., "SCHED"). '
+            "This is the project prefix used in item IDs (e.g., SCHED-0001). "
+            "Add it to your roadmap.json and re-run.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    key = data["key"]
+    expected_prefix = f"{key}-"
+
     for i, item in enumerate(data["items"]):
-        for field in REQUIRED_FIELDS:
+        for field in REQUIRED_ITEM_FIELDS:
             if field not in item:
                 print(f"Error: item {i} missing required field: {field}", file=sys.stderr)
                 sys.exit(1)
+
+        item_id = item["id"]
+        if not item_id.startswith(expected_prefix):
+            print(
+                f"Error: item {i} id '{item_id}' must start with '{expected_prefix}' "
+                f"(e.g., {key}-0001)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        seq_part = item_id[len(expected_prefix):]
+        if not seq_part.isdigit() or len(seq_part) != 4:
+            print(
+                f"Error: item {i} id '{item_id}' must end with a 4-digit number "
+                f"(e.g., {key}-0001)",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
         if item["status"] not in VALID_STATUSES:
             print(
                 f"Error: item {i} has invalid status '{item['status']}'. "
@@ -43,10 +74,36 @@ def load_roadmap(path: Path) -> dict:
                 file=sys.stderr,
             )
             sys.exit(1)
+
         for list_field in ("goals", "non_goals"):
             if not isinstance(item[list_field], list):
                 print(
                     f"Error: item {i} field '{list_field}' must be an array",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        if "dependencies" in item:
+            if not isinstance(item["dependencies"], list):
+                print(f"Error: item {i} 'dependencies' must be an array", file=sys.stderr)
+                sys.exit(1)
+            for dep in item["dependencies"]:
+                if not isinstance(dep, str):
+                    print(f"Error: item {i} dependency values must be strings", file=sys.stderr)
+                    sys.exit(1)
+
+        if "spec_folder" in item and not isinstance(item["spec_folder"], str):
+            print(f"Error: item {i} 'spec_folder' must be a string path", file=sys.stderr)
+            sys.exit(1)
+
+    # Validate dependency references point to existing items.
+    all_ids = {item["id"] for item in data["items"]}
+    for i, item in enumerate(data["items"]):
+        for dep in item.get("dependencies", []):
+            if dep not in all_ids:
+                print(
+                    f"Error: item {i} ({item['id']}) depends on '{dep}' "
+                    f"which does not exist in the roadmap",
                     file=sys.stderr,
                 )
                 sys.exit(1)
@@ -62,11 +119,24 @@ def slugify(text: str) -> str:
     return text
 
 
-def render_markdown(data: dict) -> str:
-    """Render roadmap data to Markdown."""
+def item_anchor(item: dict) -> str:
+    """Generate heading anchor for an item (matches GitHub auto-generated anchors)."""
+    return slugify(f"{item['id']}. {item['title']}")
+
+
+def render_markdown(data: dict, project_root: Path, output_dir: Path) -> str:
+    """Render roadmap data to Markdown.
+
+    Args:
+        data: Parsed roadmap.json contents.
+        project_root: Project root directory (spec_folder paths are relative to this).
+        output_dir: Directory where ROADMAP.md will be written (links are relative to this).
+    """
     items = data["items"]
+    id_to_item = {item["id"]: item for item in items}
+
     lines = [
-        "<!-- Auto-generated from roadmap.json — do not edit directly -->",
+        "<!-- Auto-generated from roadmap.json \u2014 do not edit directly -->",
         "",
         "# Roadmap",
         "",
@@ -76,22 +146,43 @@ def render_markdown(data: dict) -> str:
     ]
 
     if items:
-        lines.append("| # | Feature | Status | Spec draft |")
-        lines.append("|---|---------|--------|:---:|")
-        for i, item in enumerate(items, 1):
+        # Summary table
+        lines.append("| ID | Feature | Status | Spec draft |")
+        lines.append("|-----|---------|--------|:---:|")
+        for item in items:
             icon, label = STATUS_DISPLAY[item["status"]]
-            anchor = slugify(f"{i}. {item['title']}")
+            anchor = item_anchor(item)
             draft = "\u2713" if item.get("primer") else ""
-            lines.append(f"| {i} | [{item['title']}](#{anchor}) | {icon} {label} | {draft} |")
+            lines.append(
+                f"| {item['id']} | [{item['title']}](#{anchor}) "
+                f"| {icon} {label} | {draft} |"
+            )
         lines.append("")
 
-        for i, item in enumerate(items, 1):
+        # Detail sections
+        for item in items:
             icon, label = STATUS_DISPLAY[item["status"]]
             lines.append("---")
             lines.append("")
-            lines.append(f"### {i}. {item['title']}")
+            lines.append(f"### {item['id']}. {item['title']}")
             lines.append(f"**Status:** {icon} {label}")
             lines.append("")
+
+            # Artifact links
+            if item.get("spec_folder"):
+                folder = item["spec_folder"]
+                artifact_files = ["quickstart.md", "spec.md", "plan.md"]
+                links = []
+                for artifact in artifact_files:
+                    artifact_abs = (project_root / folder / artifact).resolve()
+                    if artifact_abs.exists():
+                        link_label = artifact.replace(".md", "")
+                        link_path = os.path.relpath(artifact_abs, output_dir.resolve())
+                        links.append(f"[{link_label}]({link_path})")
+                if links:
+                    lines.append(f"**Artifacts:** {' \u2014 '.join(links)}")
+                    lines.append("")
+
             lines.append(f"**Who:** {item['who']}")
             lines.append("")
             lines.append(f"**Why:** {item['why']}")
@@ -104,6 +195,21 @@ def render_markdown(data: dict) -> str:
             for non_goal in item["non_goals"]:
                 lines.append(f"- {non_goal}")
             lines.append("")
+
+            # Dependencies
+            if item.get("dependencies"):
+                dep_links = []
+                for dep_id in item["dependencies"]:
+                    dep_item = id_to_item.get(dep_id)
+                    if dep_item:
+                        dep_anchor = item_anchor(dep_item)
+                        dep_links.append(f"[{dep_id}](#{dep_anchor})")
+                    else:
+                        dep_links.append(dep_id)
+                lines.append(f"**Depends on:** {', '.join(dep_links)}")
+                lines.append("")
+
+            # Primer / spec draft
             if item.get("primer"):
                 lines.append("<details>")
                 lines.append("<summary><strong>Spec draft</strong></summary>")
@@ -140,11 +246,14 @@ def main():
 
     data = load_roadmap(input_path)
 
-    if args.format == "md":
-        content = render_markdown(data)
-        default_name = "ROADMAP.md"
+    output_path = Path(args.output) if args.output else input_path.parent / "ROADMAP.md"
 
-    output_path = Path(args.output) if args.output else input_path.parent / default_name
+    if args.format == "md":
+        content = render_markdown(
+            data,
+            project_root=Path.cwd(),
+            output_dir=output_path.parent,
+        )
     output_path.write_text(content)
     print(f"Rendered {len(data['items'])} items -> {output_path}")
 
