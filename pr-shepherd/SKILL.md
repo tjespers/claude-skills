@@ -42,10 +42,23 @@ bash scripts/gh-app-auth.sh --check
 
 When configured, all **write** operations (creating/updating comments, posting replies) use the auth wrapper so tracker comments appear as a bot identity. Read operations (fetching reviews, PR data) use the user's default `gh` auth.
 
-Prefix write commands with the wrapper — it falls back transparently when app credentials aren't configured:
+Prefix write commands with the wrapper — it falls back transparently when app credentials aren't configured.
+
+For **multiline bodies** (tracker comments), use `jq` to safely encode the body into JSON and pipe via `--input -`. This avoids control-character escaping issues with `-f body`:
 
 ```bash
-bash scripts/gh-app-auth.sh gh api repos/{owner}/{repo}/issues/{pr}/comments -f body="..."
+BODY=$(cat <<'TRACKER'
+...tracker markdown...
+TRACKER
+)
+RESPONSE=$(jq -n --arg body "$BODY" '{body: $body}' | \
+  bash scripts/gh-app-auth.sh gh api repos/{owner}/{repo}/issues/{pr}/comments --input -)
+```
+
+For **short one-liner bodies** (inline replies), `-f body` is fine:
+
+```bash
+bash scripts/gh-app-auth.sh gh api repos/{owner}/{repo}/pulls/{pr}/comments/{id}/replies -f body="short message"
 ```
 
 **Be consistent within a PR.** If the bot created the tracker, all updates must also use bot auth (GitHub requires the comment author to edit their own comments).
@@ -113,7 +126,7 @@ This is a living tracker comment managed by [PR Shepherd](https://github.com/tje
 
 🐑 _Created using [PR Shepherd](https://github.com/tjespers/claude-skills/tree/main/pr-shepherd)
 🤖 _Updated using [Claude Code](https://claude.com/claude-code)
-🧑‍✈️ _Piloted by [@{owner}](https://github.com/{owner})
+✈️ _Piloted by [@{owner}](https://github.com/{owner})
 ```
 
 ### Status Icons
@@ -181,10 +194,19 @@ When reviews exist, group comments into themes and present them to the user with
 
 ### 2. Create Tracker Comment
 
-Post a top-level comment with all themes set to ⏳ Pending. Capture the comment ID and URL from the response:
+Post a top-level comment with all themes set to ⏳ Pending. Use `jq` to encode the multiline body into valid JSON, then pipe to `gh api` via `--input -`.
+
+Compute dynamic values (like timestamps) **before** the heredoc — single-quoted heredocs (`<<'TRACKER'`) don't expand variables or command substitutions:
 
 ```bash
-RESPONSE=$(bash scripts/gh-app-auth.sh gh api repos/{owner}/{repo}/issues/{pr}/comments -f body="...")
+TIMESTAMP=$(date +"%Y-%m-%d %H:%M")
+BODY=$(cat <<TRACKER
+## Pull Request Tracker — Revision 1
+...full tracker markdown with $TIMESTAMP where needed...
+TRACKER
+)
+RESPONSE=$(jq -n --arg body "$BODY" '{body: $body}' | \
+  bash scripts/gh-app-auth.sh gh api repos/{owner}/{repo}/issues/{pr}/comments --input -)
 COMMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
 TRACKER_URL=$(echo "$RESPONSE" | jq -r '.html_url')
 ```
@@ -195,7 +217,7 @@ All subsequent updates use `COMMENT_ID`. Use `TRACKER_URL` in inline replies to 
 
 For each theme in order:
 
-1. Update tracker → 🔄 In Progress (`bash scripts/gh-app-auth.sh gh api -X PATCH repos/{owner}/{repo}/issues/comments/{id} -f body="..."`)
+1. Update tracker → 🔄 In Progress (`jq -n --arg body "$BODY" '{body: $body}' | bash scripts/gh-app-auth.sh gh api -X PATCH repos/{owner}/{repo}/issues/comments/{id} --input -`)
 2. Implement changes
 3. Commit
 4. Update tracker → ✅ Done with commit hash
