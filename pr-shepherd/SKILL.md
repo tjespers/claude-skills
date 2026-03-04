@@ -5,7 +5,7 @@ allowed-tools: Read Edit Bash(gh repo view:*) Bash(gh pr view:*) Bash(gh api rep
 license: Apache-2.0
 metadata:
   author: Tim Jespers <git@tjespers.dev>
-  version: 1.0.0
+  version: 1.0.1
 ---
 
 # PR Shepherd
@@ -44,7 +44,9 @@ When configured, all **write** operations (creating/updating comments, posting r
 
 Prefix write commands with the wrapper — it falls back transparently when app credentials aren't configured.
 
-For **multiline bodies** (tracker comments), use `jq` to safely encode the body into JSON and pipe via `--input -`. This avoids control-character escaping issues with `-f body`:
+For **multiline bodies** (tracker comments), use `jq` to safely encode the body into JSON and pipe via `--input -`. This avoids control-character escaping issues with `-f body`.
+
+**CRITICAL**: When extracting fields from the API response, NEVER use `echo "$RESPONSE" | jq`. The `echo` builtin interprets escape sequences (`\n`, `\t`, etc.) inside the JSON string values, corrupting the JSON. Use `printf '%s'` or a here-string instead:
 
 ```bash
 BODY=$(cat <<'TRACKER'
@@ -53,6 +55,8 @@ TRACKER
 )
 RESPONSE=$(jq -n --arg body "$BODY" '{body: $body}' | \
   bash scripts/gh-app-auth.sh gh api repos/{owner}/{repo}/issues/{pr}/comments --input -)
+COMMENT_ID=$(printf '%s' "$RESPONSE" | jq -r '.id')
+TRACKER_URL=$(printf '%s' "$RESPONSE" | jq -r '.html_url')
 ```
 
 For **short one-liner bodies** (inline replies), `-f body` is fine:
@@ -207,8 +211,8 @@ TRACKER
 )
 RESPONSE=$(jq -n --arg body "$BODY" '{body: $body}' | \
   bash scripts/gh-app-auth.sh gh api repos/{owner}/{repo}/issues/{pr}/comments --input -)
-COMMENT_ID=$(echo "$RESPONSE" | jq -r '.id')
-TRACKER_URL=$(echo "$RESPONSE" | jq -r '.html_url')
+COMMENT_ID=$(printf '%s' "$RESPONSE" | jq -r '.id')
+TRACKER_URL=$(printf '%s' "$RESPONSE" | jq -r '.html_url')
 ```
 
 All subsequent updates use `COMMENT_ID`. Use `TRACKER_URL` in inline replies to link back to the tracker.
