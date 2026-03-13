@@ -1,0 +1,16 @@
+skill-creator
+Copyright 2025-2026 Anthropic, PBC
+Copyright 2026 Tim Jespers <git@tjespers.dev>
+
+This skill is a derivative work based on Anthropic's "skill-creator",
+distributed under the Apache License, Version 2.0.
+
+Original work:
+  https://github.com/anthropics/skills/tree/main/skills/skill-creator
+  Based on revision: b0cbd3df1533b396d281a6886d5132f623393a9c
+
+Modifications by Tim Jespers:
+- Added init_skill.py scaffold script with LICENSE.txt auto-creation
+- Added license, metadata (author, version) YAML frontmatter fields
+- Added SPDX license auto-detection from project LICENSE files
+- Updated SKILL.md with license/metadata guidance and init_skill docs

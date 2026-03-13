@@ -1,6 +1,10 @@
 ---
 name: skill-creator
 description: Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.
+license: Apache-2.0
+metadata:
+  author: Tim Jespers <git@tjespers.dev>
+  version: 2.0.0
 ---
 
 # Skill Creator
@@ -59,12 +63,28 @@ Proactively ask questions about edge cases, input/output formats, example files,
 
 Check available MCPs - if useful for research (searching docs, finding similar skills, looking up best practices), research in parallel via subagents if available, otherwise inline. Come prepared with context to reduce burden on the user.
 
+### Initialize the skill
+
+When creating a new skill from scratch, run the `init_skill.py` script to scaffold the directory structure:
+
+```bash
+scripts/init_skill.py <skill-name> --path <output-directory> [--no-license]
+```
+
+The script creates the skill directory with a SKILL.md template (including `license` and `metadata` frontmatter), a LICENSE.txt file (auto-detected from the project or defaulting to Apache-2.0), and example `scripts/`, `references/`, and `assets/` directories. Use `--no-license` to skip license file and frontmatter.
+
+Skip this step if the skill already exists and you're iterating on it.
+
 ### Write the SKILL.md
 
 Based on the user interview, fill in these components:
 
 - **name**: Skill identifier
 - **description**: When to trigger, what it does. This is the primary triggering mechanism - include both what the skill does AND specific contexts for when to use it. All "when to use" info goes here, not in the body. Note: currently Claude has a tendency to "undertrigger" skills -- to not use them when they'd be useful. To combat this, please make the skill descriptions a little bit "pushy". So for instance, instead of "How to build a simple fast dashboard to display internal Anthropic data.", you might write "How to build a simple fast dashboard to display internal Anthropic data. Make sure to use this skill whenever the user mentions dashboards, data visualization, internal metrics, or wants to display any kind of company data, even if they don't explicitly ask for a 'dashboard.'"
+- **license**: The license identifier (e.g., `Apache-2.0`, `MIT`). Included by default — determine by checking if the project has a LICENSE file (use that identifier), otherwise default to `Apache-2.0`. Only omit if the user explicitly opts out.
+- **metadata**: Additional metadata about the skill. Include by default:
+  - `author`: The skill author's name and email (derive from git config if available)
+  - `version`: Semantic version starting at `1.0.0`
 - **compatibility**: Required tools, dependencies (optional, rarely needed)
 - **the rest of the skill :)**
 
@@ -75,8 +95,13 @@ Based on the user interview, fill in these components:
 ```
 skill-name/
 ├── SKILL.md (required)
-│   ├── YAML frontmatter (name, description required)
+│   ├── YAML frontmatter (required)
+│   │   ├── name: (required)
+│   │   ├── description: (required)
+│   │   ├── license: (default)
+│   │   └── metadata: (default)
 │   └── Markdown instructions
+├── LICENSE.txt (default - included unless user opts out)
 └── Bundled Resources (optional)
     ├── scripts/    - Executable code for deterministic/repetitive tasks
     ├── references/ - Docs loaded into context as needed
